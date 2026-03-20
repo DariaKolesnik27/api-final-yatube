@@ -33,6 +33,9 @@ class Post(models.Model):
     def __str__(self):
         return textwrap.shorten(self.text, width=TEXT_WIDTH, placeholder='...')
 
+    class Meta:
+        ordering = ('-pub_date',)
+
 
 class Comment(models.Model):
     author = models.ForeignKey(
@@ -53,8 +56,17 @@ class Follow(models.Model):
     following = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name='followers'
+        related_name='follows'
     )
 
     class Meta:
-        unique_together = ('user', 'following')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'following'],
+                name='unique_follow'
+            ),
+            models.CheckConstraint(
+                check=~models.Q(user=models.F('following')),
+                name='cant_follow_to_yourself'
+            ),
+        ]

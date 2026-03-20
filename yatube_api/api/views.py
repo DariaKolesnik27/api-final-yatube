@@ -1,9 +1,12 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import filters, serializers, viewsets
+from rest_framework import filters, mixins, viewsets
 from rest_framework.pagination import LimitOffsetPagination
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import (
+    IsAuthenticated,
+    IsAuthenticatedOrReadOnly
+)
 
-from posts.models import Comment, Group, Follow, Post
+from posts.models import Comment, Group, Post
 from .permission import IsOwnerOrReadOnly
 from .serializers import (
     CommentSerializer,
@@ -16,7 +19,7 @@ from .serializers import (
 class CommentViewSet(viewsets.ModelViewSet):
     queryset = Comment.objects.all()
     serializer_class = CommentSerializer
-    permission_classes = [IsOwnerOrReadOnly,]
+    permission_classes = [IsOwnerOrReadOnly, IsAuthenticatedOrReadOnly]
 
     def get_post(self):
         return get_object_or_404(Post, pk=self.kwargs['post_pk'])
@@ -37,31 +40,25 @@ class GroupViewSet(viewsets.ReadOnlyModelViewSet):
 class PostViewSet(viewsets.ModelViewSet):
     queryset = Post.objects.all()
     serializer_class = PostSerializer
-    permission_classes = [IsOwnerOrReadOnly,]
+    permission_classes = [IsOwnerOrReadOnly, IsAuthenticatedOrReadOnly]
     pagination_class = LimitOffsetPagination
 
     def perform_create(self, serializer):
-        group = serializer.validated_data.get('group')
-        serializer.save(author=self.request.user, group=group)
+        serializer.save(author=self.request.user)
 
 
-class FollowViewSet(viewsets.ModelViewSet):
+class FollowViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    viewsets.GenericViewSet
+):
     serializer_class = FollowSerializer
     permission_classes = [IsAuthenticated,]
     filter_backends = (filters.SearchFilter,)
     search_fields = ('following__username',)
 
     def get_queryset(self):
-        return Follow.objects.filter(user=self.request.user)
+        return self.request.user.follow.all()
 
     def perform_create(self, serializer):
-        user = self.request.user
-        following = serializer.validated_data.get('following')
-
-        if Follow.objects.filter(user=user, following=following).exists():
-            raise serializers.ValidationError(
-                'Вы уже подписаны на этого пользователя.'
-            )
-        if user == following:
-            raise serializers.ValidationError('Нельзя подписаться на себя.')
-        serializer.save(user=user, following=following)
+        serializer.save(user=self.request.user)
